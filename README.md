@@ -100,19 +100,26 @@ PCA explains ~36% of variance in 2 components, so the scatter plot is a
 rough approximation — treat cluster membership (not plot distance) as ground
 truth.
 
-- **Cluster 0 — Mellow country/acoustic (39 tracks):** Highest acousticness
-  (0.38) of any cluster, lower energy and valence than the rest. Zach Bryan,
-  Flatland Cavalry, Hudson Westbrook — reflective, singer-songwriter leaning
-  country and folk.
-- **Cluster 1 — Upbeat mainstream pop/pop-country (91 tracks, largest):**
-  Low acousticness, high energy (0.80), almost entirely major key (mode
-  0.99). Parker McCollum, Elle King, The Chainsmokers x 5SOS — the catch-all
-  radio-friendly, high-energy cluster.
-- **Cluster 2 — Party/EDM/dance-pop (29 tracks):** Highest danceability
-  (0.68) and valence (0.56), mostly minor key, higher speechiness. Axwell /\
-  Ingrosso, Martin Garrix, Cardi B x Bad Bunny x J Balvin — dance-floor and
-  hip-hop-adjacent bangers.
-- **Cluster 3 — Moody electronic/atmospheric (6 tracks, smallest):** Standout
-  instrumentalness (0.34) and liveness (0.63), slower tempo (112 bpm), mostly
-  minor key. RÜFÜS DU SOL, Don Toliver, Mau P — darker, more textured
-  electronic/house tracks.
+- **Cluster 0 — Mellow Acoustic (39 tracks):** Highest acousticness (0.38)
+  of any cluster, lower energy (0.56) and valence (0.40) than the rest,
+  mostly major key (mode 0.87). Top artists by track count: Hudson
+  Westbrook, Ariana Grande, Taylor Swift — reflective, singer-songwriter
+  leaning tracks.
+- **Cluster 1 — Upbeat Pop (91 tracks, largest):** Low acousticness (0.07),
+  high energy (0.80), almost entirely major key (mode 0.99). Top artists by
+  track count: Taylor Swift, The Chainsmokers, Morgan Wallen — the
+  catch-all radio-friendly, high-energy cluster.
+- **Cluster 2 — Party / EDM (29 tracks):** Highest danceability (0.68) and
+  valence (0.56) of any cluster, almost entirely minor key (mode 0.03),
+  highest speechiness (0.12). Top artists by track count: Justin Bieber, Ty
+  Dolla $ign, Taylor Swift — dance-floor and hip-hop-adjacent bangers.
+- **Cluster 3 — Moody Electronic (6 tracks, smallest):** Standout
+  instrumentalness (0.34) and liveness (0.63), slowest tempo (112 bpm),
+  mostly minor key (mode 0.17). Top artists by track count: Don Toliver,
+  BUNT., RÜFÜS DU SOL — darker, more textured electronic/house tracks.
+
+Cluster names, artist lists, and stats above are generated straight from
+`data/clustered_tracks.csv` (same source `export_frontend_data.py` uses for
+the dashboard) — rerun `python src/export_frontend_data.py` after any
+pipeline change and update this section to match `frontend/lib/data.ts`'s
+`CLUSTERS` array so the two don't drift apart.
