@@ -1,0 +1,65 @@
+# Spotify Taste Clustering
+
+Clusters your top Spotify tracks using K-means and PCA on audio features
+(sourced from a static Kaggle dataset, with a ReccoBeats fallback for
+unmatched tracks — Spotify deprecated the `audio-features` endpoint for
+apps created after Nov 2024).
+
+## Setup
+
+1. Register an app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard),
+   set the redirect URI to `http://127.0.0.1:8888/callback` (Spotify no longer
+   allows `localhost` as of its Apr 2025 redirect URI policy — must be an
+   explicit loopback IP).
+2. Fill in `.env` with `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`.
+3. `pip install -r requirements.txt`
+4. Download a Spotify audio-features dataset from Kaggle and save it as
+   `data/kaggle_audio_features.csv` (needs columns for track name, artist,
+   and the standard audio features: acousticness, danceability, energy,
+   instrumentalness, liveness, loudness, speechiness, tempo, valence, key, mode).
+
+## Run order
+
+```bash
+cd src
+python fetch_top_tracks.py      # -> data/my_top_tracks.csv
+python match_features.py        # -> data/merged_features.csv
+python cluster.py --k 4         # -> data/clustered_tracks.csv
+python visualize.py             # -> output/cluster_scatter.html, output/cluster_features.html
+```
+
+Each script can be run independently once its inputs exist, which is
+useful for debugging a single step.
+
+## Match rate
+
+Out of 214 unique top tracks pulled from Spotify:
+- Kaggle fuzzy match: 42/214 (19.6%) — the Kaggle dataset is from 2022, so it
+  missed most recent releases.
+- ReccoBeats fallback recovered another 123/172 unmatched tracks.
+- **Final coverage: 165/214 (77.1%)**, 49 tracks dropped for having no
+  features from either source.
+
+## Cluster interpretations
+
+k=4, clustered in scaled feature space (PCA used only for the 2D plot).
+PCA explains ~36% of variance in 2 components, so the scatter plot is a
+rough approximation — treat cluster membership (not plot distance) as ground
+truth.
+
+- **Cluster 0 — Mellow country/acoustic (39 tracks):** Highest acousticness
+  (0.38) of any cluster, lower energy and valence than the rest. Zach Bryan,
+  Flatland Cavalry, Hudson Westbrook — reflective, singer-songwriter leaning
+  country and folk.
+- **Cluster 1 — Upbeat mainstream pop/pop-country (91 tracks, largest):**
+  Low acousticness, high energy (0.80), almost entirely major key (mode
+  0.99). Parker McCollum, Elle King, The Chainsmokers x 5SOS — the catch-all
+  radio-friendly, high-energy cluster.
+- **Cluster 2 — Party/EDM/dance-pop (29 tracks):** Highest danceability
+  (0.68) and valence (0.56), mostly minor key, higher speechiness. Axwell /\
+  Ingrosso, Martin Garrix, Cardi B x Bad Bunny x J Balvin — dance-floor and
+  hip-hop-adjacent bangers.
+- **Cluster 3 — Moody electronic/atmospheric (6 tracks, smallest):** Standout
+  instrumentalness (0.34) and liveness (0.63), slower tempo (112 bpm), mostly
+  minor key. RÜFÜS DU SOL, Don Toliver, Mau P — darker, more textured
+  electronic/house tracks.

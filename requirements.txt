@@ -1,0 +1,7 @@
+spotipy
+pandas
+scikit-learn
+rapidfuzz
+plotly
+python-dotenv
+requests

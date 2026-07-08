@@ -1,0 +1,12 @@
+.env
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/kaggle_audio_features.csv
+data/my_top_tracks.csv
+data/merged_features.csv
+data/clustered_tracks.csv
+output/
+.cache
