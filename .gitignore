@@ -10,3 +10,5 @@ data/merged_features.csv
 data/clustered_tracks.csv
 output/
 .cache
+node_modules/
+dist/
