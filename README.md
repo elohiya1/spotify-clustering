@@ -5,36 +5,34 @@ Clusters your top Spotify tracks using K-means and PCA on audio features
 unmatched tracks — Spotify deprecated the `audio-features` endpoint for
 apps created after Nov 2024).
 
-## Why this architecture
+## Architecture
 
-This started as a personal project at the intersection of two interests —
-music and machine learning — and a way to get hands-on with what
-unsupervised learning can actually reveal about a listener's own taste,
+A personal project at the intersection of music and machine learning,
+using unsupervised learning to reveal patterns in a listener's own taste
 rather than just eyeballing playlists.
 
-A few things about the pipeline aren't obvious just from running it:
+Pipeline details:
 
-- **Why a Kaggle dataset instead of Spotify's own audio features API:**
-  Spotify's `top tracks` endpoint (used in `fetch_top_tracks.py`) still
-  works and gives track identity — name, artist, album, popularity — but
-  not the audio features (acousticness, danceability, energy, etc.) needed
-  for clustering. Spotify deprecated `GET /audio-features` for apps created
-  after Nov 2024, so a static Kaggle dataset of pre-collected audio features
-  stands in as the primary feature source, matched to each top track via
+- **Feature source:** Spotify's `top tracks` endpoint (used in
+  `fetch_top_tracks.py`) gives track identity — name, artist, album,
+  popularity — but not audio features (acousticness, danceability, energy,
+  etc.), since Spotify deprecated `GET /audio-features` for apps created
+  after Nov 2024. A static Kaggle dataset of pre-collected audio features
+  is the primary feature source instead, matched to each top track via
   fuzzy title/artist matching (`match_features.py`, `rapidfuzz.fuzz.WRatio`,
   threshold 90).
-- **Why a ReccoBeats fallback on top of that:** the Kaggle dataset is a
-  frozen 2022 snapshot, so it systematically misses newer releases. For
-  tracks the Kaggle fuzzy match can't find, `match_features.py` falls back
-  to ReccoBeats, a third-party API that still exposes Spotify-style audio
-  features, on a best-effort basis. Tracks that miss both sources are
-  dropped rather than imputed, so clustering stays grounded in real
-  feature values instead of guesses.
-- **Why K-means and PCA are doing separate jobs:** K-means clusters tracks
-  in the full 11-dimension scaled feature space; PCA is a separate
-  2-component projection computed only so the scatter plot has something
-  to plot on. Cluster membership comes from K-means alone — see "Cluster
-  interpretations" below for why that matters when reading the plot.
+- **ReccoBeats fallback:** the Kaggle dataset is a frozen 2022 snapshot, so
+  it systematically misses newer releases. For tracks the Kaggle fuzzy
+  match can't find, `match_features.py` falls back to ReccoBeats, a
+  third-party API that still exposes Spotify-style audio features, on a
+  best-effort basis. Tracks that miss both sources are dropped rather than
+  imputed, so clustering stays grounded in real feature values instead of
+  guesses.
+- **K-means and PCA:** K-means clusters tracks in the full 11-dimension
+  scaled feature space; PCA is a separate 2-component projection computed
+  only so the scatter plot has something to plot on. Cluster membership
+  comes from K-means alone — see "Cluster interpretations" below for how
+  that affects reading the plot.
 
 ## Setup
 
