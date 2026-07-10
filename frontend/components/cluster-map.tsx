@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ZAxis } from 'recharts';
-import { CLUSTERS, TRACKS, Track } from '@/lib/data';
+import { Cluster, Track } from '@/lib/api';
 
 type Feature = 'energy' | 'danceability' | 'acousticness' | 'valence' | 'speechiness' | 'instrumentalness';
 
@@ -25,12 +25,13 @@ interface CustomTooltipProps {
   payload?: any[];
   xFeature: Feature;
   yFeature: Feature;
+  clusters: Cluster[];
 }
 
-const CustomTooltip = ({ active, payload, xFeature, yFeature }: CustomTooltipProps) => {
+const CustomTooltip = ({ active, payload, xFeature, yFeature, clusters }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload as Track & { rx: number; ry: number };
-    const cluster = CLUSTERS.find(c => c.id === data.clusterId);
+    const cluster = clusters.find(c => c.id === data.clusterId);
     return (
       <div className="bg-[#0a0a0a] border border-[#333] p-3 shadow-2xl text-xs pointer-events-none">
         <p className="font-bold text-white mb-0.5">{data.title}</p>
@@ -51,7 +52,15 @@ const CustomTooltip = ({ active, payload, xFeature, yFeature }: CustomTooltipPro
   return null;
 };
 
-export function ClusterMap({ onTrackSelect }: { onTrackSelect?: (track: Track) => void }) {
+export function ClusterMap({
+  clusters,
+  tracks,
+  onTrackSelect,
+}: {
+  clusters: Cluster[];
+  tracks: Track[];
+  onTrackSelect?: (track: Track) => void;
+}) {
   const [xFeature, setXFeature] = useState<Feature>('energy');
   const [yFeature, setYFeature] = useState<Feature>('acousticness');
   const [angleDeg, setAngleDeg] = useState(0);
@@ -111,13 +120,13 @@ export function ClusterMap({ onTrackSelect }: { onTrackSelect?: (track: Track) =
 
   // Rotate raw feature coordinates
   const chartData = useMemo(() =>
-    TRACKS.map(t => {
+    tracks.map(t => {
       const rawX = t[xFeature] as number;
       const rawY = t[yFeature] as number;
       const { rx, ry } = rotatePoint(rawX - 0.5, rawY - 0.5, angleRad);
       return { ...t, px: rx + 0.5, py: ry + 0.5 };
     }),
-    [xFeature, yFeature, angleRad]
+    [tracks, xFeature, yFeature, angleRad]
   );
 
   const handleXSelect = (f: Feature) => { if (f !== yFeature) setXFeature(f); };
@@ -199,11 +208,11 @@ export function ClusterMap({ onTrackSelect }: { onTrackSelect?: (track: Track) =
             <YAxis type="number" dataKey="py" hide domain={['auto', 'auto']} />
             <ZAxis type="number" range={[50, 50]} />
             <Tooltip
-              content={<CustomTooltip xFeature={xFeature} yFeature={yFeature} />}
+              content={<CustomTooltip xFeature={xFeature} yFeature={yFeature} clusters={clusters} />}
               cursor={{ strokeDasharray: '3 3', stroke: '#2a2a2a' }}
               isAnimationActive={false}
             />
-            {CLUSTERS.map(cluster => {
+            {clusters.map(cluster => {
               const clusterData = chartData.filter(t => t.clusterId === cluster.id);
               return (
                 <Scatter key={cluster.id} name={cluster.name} data={clusterData} fill={cluster.color}
@@ -222,8 +231,8 @@ export function ClusterMap({ onTrackSelect }: { onTrackSelect?: (track: Track) =
 
       {/* Feature key */}
       <div className="flex-shrink-0 border-t border-[#1a1a1a] pt-3">
-        <div className="grid grid-cols-4 gap-3">
-          {CLUSTERS.map(cluster => (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {clusters.map(cluster => (
             <div key={cluster.id} className="flex flex-col gap-1.5">
               {/* Cluster header */}
               <div className="flex items-center gap-1.5">

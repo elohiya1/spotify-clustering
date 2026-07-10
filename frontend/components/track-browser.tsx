@@ -1,20 +1,28 @@
 import React, { useState, useMemo } from 'react';
-import { TRACKS, CLUSTERS } from '@/lib/data';
+import { Cluster, MergedTrack } from '@/lib/api';
 import { Search } from 'lucide-react';
 import { VinylRecord } from '@/components/vinyl-record';
 
-export function TrackBrowser() {
+export function TrackBrowser({
+  tracks,
+  kmeansClusters,
+  gmmClusters,
+}: {
+  tracks: MergedTrack[];
+  kmeansClusters: Cluster[];
+  gmmClusters: Cluster[];
+}) {
   const [filter, setFilter] = useState<number | 'all'>('all');
   const [search, setSearch] = useState('');
 
   const filteredTracks = useMemo(() => {
-    return TRACKS.filter(t => {
+    return tracks.filter(t => {
       const matchesFilter = filter === 'all' || t.clusterId === filter;
-      const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase()) || 
+      const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase()) ||
                             t.artist.toLowerCase().includes(search.toLowerCase());
       return matchesFilter && matchesSearch;
     }).sort((a, b) => a.clusterId - b.clusterId);
-  }, [filter, search]);
+  }, [tracks, filter, search]);
 
   return (
     <div className="border border-[#282828] bg-[#000] flex flex-col h-[700px]">
@@ -28,7 +36,7 @@ export function TrackBrowser() {
           >
             All Tracks
           </button>
-          {CLUSTERS.map(c => (
+          {kmeansClusters.map(c => (
             <button
               key={c.id}
               onClick={() => setFilter(c.id)}
@@ -58,40 +66,58 @@ export function TrackBrowser() {
       </div>
 
       {/* Table Header */}
-      <div className="grid grid-cols-[auto_1fr_120px] md:grid-cols-[auto_1.5fr_1fr_140px] gap-4 p-4 border-b border-[#282828] bg-black text-[10px] font-bold tracking-[0.2em] text-[#555] uppercase">
+      <div className="grid grid-cols-[auto_1fr_120px] md:grid-cols-[auto_1.2fr_0.9fr_120px_140px] gap-4 p-4 border-b border-[#282828] bg-black text-[10px] font-bold tracking-[0.2em] text-[#555] uppercase">
         <div className="w-8"></div>
         <div>Title</div>
         <div className="hidden md:block">Artist</div>
         <div className="text-right">Metrics (E/D/V)</div>
+        <div className="hidden md:block text-right">GMM Confidence</div>
       </div>
 
       {/* Track List */}
       <div className="flex-1 overflow-auto custom-scrollbar">
         {filteredTracks.map(track => {
-          const cluster = CLUSTERS.find(c => c.id === track.clusterId)!;
-          
+          const cluster = kmeansClusters.find(c => c.id === track.clusterId)!;
+          const gmmTooltip = track.gmmProbabilities
+            .map((p, i) => `${gmmClusters[i]?.name ?? `Cluster ${i}`}: ${(p * 100).toFixed(0)}%`)
+            .join('\n');
+
           return (
             <div
               key={track.id}
-              className="grid grid-cols-[auto_1fr_120px] md:grid-cols-[auto_1.5fr_1fr_140px] gap-4 px-4 py-3 border-b border-[#1a1a1a] last:border-b-0 hover:bg-[#121212] transition-colors items-center group"
+              className="grid grid-cols-[auto_1fr_120px] md:grid-cols-[auto_1.2fr_0.9fr_120px_140px] gap-4 px-4 py-3 border-b border-[#1a1a1a] last:border-b-0 hover:bg-[#121212] transition-colors items-center group"
             >
               <div className="w-8 flex items-center justify-center">
                 <VinylRecord size={24} labelColor={cluster.color} className="opacity-40 group-hover:opacity-100 group-hover:animate-[spin_2s_linear_infinite]" />
               </div>
-              
+
               <div className="truncate">
                 <p className="text-sm font-semibold text-white truncate group-hover:text-[#7C3AED] transition-colors">{track.title}</p>
                 <p className="text-xs text-[#b3b3b3] truncate md:hidden mt-0.5">{track.artist}</p>
               </div>
-              
+
               <div className="hidden md:block truncate">
                 <p className="text-sm text-[#b3b3b3] truncate">{track.artist}</p>
               </div>
-              
+
               <div className="flex flex-col gap-1.5 w-full max-w-[120px] justify-self-end mt-1">
                 <FeatureBar val={track.energy} color={cluster.color} />
                 <FeatureBar val={track.danceability} color={cluster.color} />
                 <FeatureBar val={track.valence} color={cluster.color} />
+              </div>
+
+              <div className="hidden md:flex w-full max-w-[140px] justify-self-end" title={gmmTooltip}>
+                <div className="flex h-2 w-full overflow-hidden rounded-sm">
+                  {track.gmmProbabilities.map((p, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        width: `${p * 100}%`,
+                        backgroundColor: gmmClusters[i]?.color ?? '#555',
+                      }}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
           );

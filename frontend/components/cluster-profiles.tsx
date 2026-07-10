@@ -1,15 +1,15 @@
 import React from 'react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
-import { CLUSTERS } from '@/lib/data';
+import { Cluster } from '@/lib/api';
 import { VinylRecord } from '@/components/vinyl-record';
 
-export function ClusterProfiles() {
+export function ClusterProfiles({ clusters }: { clusters: Cluster[] }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-      {CLUSTERS.map((cluster) => (
+      {clusters.map((cluster) => (
         <div key={cluster.id} className="flex flex-col border border-[#282828] bg-black group">
-          {/* Sleeve Cover (Square) */}
-          <div className="aspect-square border-b border-[#282828] p-6 relative flex flex-col justify-between overflow-hidden bg-[#121212]">
+          {/* Sleeve Cover */}
+          <div className="aspect-[4/5] border-b border-[#282828] p-6 relative flex flex-col justify-between overflow-hidden bg-[#121212]">
             {/* Partially showing vinyl record sliding out */}
             <div className="absolute -right-16 -bottom-16 opacity-50 group-hover:opacity-100 group-hover:-translate-x-6 group-hover:-translate-y-6 transition-all duration-500 ease-out">
               <VinylRecord size={240} labelColor={cluster.color} />
@@ -17,7 +17,7 @@ export function ClusterProfiles() {
             
             <div className="relative z-10">
               <div className="w-4 h-4 mb-5" style={{ backgroundColor: cluster.color }} />
-              <h3 className="text-3xl font-bold tracking-tighter text-white max-w-[80%] leading-none mb-2">
+              <h3 className="text-xl font-bold tracking-tight text-white max-w-[85%] leading-tight mb-2 line-clamp-3">
                 {cluster.name}
               </h3>
               <p className="text-[10px] font-bold text-[#b3b3b3] font-mono uppercase tracking-widest">{cluster.count} Tracks</p>
