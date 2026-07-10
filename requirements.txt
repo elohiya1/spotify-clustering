@@ -5,3 +5,5 @@ rapidfuzz
 plotly
 python-dotenv
 requests
+fastapi
+uvicorn
