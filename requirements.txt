@@ -1,9 +1,11 @@
 spotipy
 pandas
+numpy
 scikit-learn
 rapidfuzz
 plotly
 python-dotenv
 requests
-fastapi
-uvicorn
+google-genai
+lyricsgenius
+pydantic

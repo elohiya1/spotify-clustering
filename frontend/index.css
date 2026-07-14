@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&family=Lora:ital,wght@1,300;1,400&display=swap');
 
 @import 'tailwindcss';
 @import 'tw-animate-css';
@@ -19,41 +19,37 @@
 
   --font-sans: var(--app-font-sans);
   --font-display: var(--app-font-display);
-
-  /* Force all radii to 0 */
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
-  --radius: 0px;
+  --font-mono: var(--app-font-mono);
+  --font-serif: var(--app-font-serif);
 }
 
 :root {
-  --background: #000000;
-  --foreground: #ffffff;
-  --border: #282828;
-  --input: #282828;
-  --ring: #7C3AED;
-  --primary: #7C3AED;
-  --primary-foreground: #000000;
-  --muted: #121212;
-  --muted-foreground: #b3b3b3;
+  --background: #0a0a0a;
+  --foreground: #f0ede8;
+  --border: #262422;
+  --input: #262422;
+  --ring: #8a9a7b;
+  --primary: #f0ede8;
+  --primary-foreground: #0a0a0a;
+  --muted: #16140f;
+  --muted-foreground: #6b6560;
 
-  --app-font-sans: 'Plus Jakarta Sans', sans-serif;
-  --app-font-display: 'Plus Jakarta Sans', sans-serif;
-  --radius: 0px;
+  --app-font-sans: 'DM Sans', sans-serif;
+  --app-font-display: 'Syne', sans-serif;
+  --app-font-mono: 'DM Mono', monospace;
+  --app-font-serif: 'Lora', serif;
 }
 
 .dark {
-  --background: #000000;
-  --foreground: #ffffff;
-  --border: #282828;
-  --input: #282828;
-  --ring: #7C3AED;
-  --primary: #7C3AED;
-  --primary-foreground: #000000;
-  --muted: #121212;
-  --muted-foreground: #b3b3b3;
+  --background: #0a0a0a;
+  --foreground: #f0ede8;
+  --border: #262422;
+  --input: #262422;
+  --ring: #8a9a7b;
+  --primary: #f0ede8;
+  --primary-foreground: #0a0a0a;
+  --muted: #16140f;
+  --muted-foreground: #6b6560;
 }
 
 @layer base {
@@ -64,9 +60,43 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }
-  
-  /* Disable rounded corners globally on structural elements */
-  div, span, button, input, section, header, nav, article, aside, main {
-    border-radius: 0 !important;
+}
+
+@keyframes vinyl-spin {
+  from {
+    transform: rotate(0deg);
   }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes marquee-scroll {
+  0%, 10% {
+    transform: translateX(0);
+  }
+  90%, 100% {
+    transform: translateX(var(--marquee-distance, -50%));
+  }
+}
+
+.animate-marquee {
+  animation: marquee-scroll 8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee {
+    animation: none;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
 }

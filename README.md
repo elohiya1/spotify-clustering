@@ -1,125 +1,128 @@
-# Spotify Taste Clustering
+# Spotify Taste Clustering + Record Player
 
-Clusters your top Spotify tracks using K-means and Gaussian Mixture Models
-on audio features (sourced from a static Kaggle dataset, with a ReccoBeats
-fallback for unmatched tracks — Spotify deprecated the `audio-features`
-endpoint for apps created after Nov 2024), with PCA for the 2D scatter plot.
+Clusters your top Spotify tracks by musical *taste* rather than raw audio
+features — Spotify deprecated the `audio-features` endpoint for apps created
+after Nov 2024, so this project builds Gemini text embeddings from each
+track's lyrics, genre tags, and artist info instead. An orchestrating LLM
+agent names and describes each cluster using real tool calls, and a
+separate LLM judge scores those descriptions for groundedness, specificity,
+and accuracy. The whole pipeline collapses into a single `output.json`,
+which a dark, ambient record-player frontend reads with no backend and no
+Spotify auth at runtime.
 
 ## Architecture
 
-A personal project at the intersection of music and machine learning,
-using unsupervised learning to reveal patterns in a listener's own taste
-rather than just eyeballing playlists.
+```
+Spotify API (/me/top/tracks)
+        |
+        v
+src/tools.py: fetch_lyrics, fetch_genre_tags, fetch_artist_info, search_web
+        |
+        v
+src/build_embeddings.py: Gemini embedding over lyrics+genre+artist context
+        |
+        v
+src/cluster.py: StandardScaler -> KMeans + GMM sweep (k=2..10)
+                scored via silhouette (both) + BIC (GMM)
+                auto-selects one (model, k) pair
+        |
+        v
+src/agent_describe_clusters.py: orchestrating Gemini agent with tool use
+                -> per cluster: name + 2-3 sentence description
+        |
+        v
+src/judge_eval.py: LLM-as-judge scores each description on
+                    groundedness / specificity / accuracy (1-5 each)
+        |
+        v
+src/visualize.py: PCA projection + output.json export
+                   (-> output/output.json AND frontend/public/output.json)
+```
 
-Pipeline details:
-
-- **Feature source:** Spotify's `top tracks` endpoint (used in
-  `fetch_top_tracks.py`) gives track identity — name, artist, album,
-  popularity — but not audio features (acousticness, danceability, energy,
-  etc.), since Spotify deprecated `GET /audio-features` for apps created
-  after Nov 2024. A static Kaggle dataset of pre-collected audio features
-  is the primary feature source instead, matched to each top track via
-  fuzzy title/artist matching (`match_features.py`, `rapidfuzz.fuzz.WRatio`,
-  threshold 90).
-- **ReccoBeats fallback:** the Kaggle dataset is a frozen 2022 snapshot, so
-  it systematically misses newer releases. For tracks the Kaggle fuzzy
-  match can't find, `match_features.py` falls back to ReccoBeats, a
-  third-party API that still exposes Spotify-style audio features, on a
-  best-effort basis. Tracks that miss both sources are dropped rather than
-  imputed, so clustering stays grounded in real feature values instead of
-  guesses.
-- **K-means, GMM, and PCA:** both K-means and a Gaussian Mixture Model
-  cluster tracks in the full 11-dimension scaled feature space; PCA is a
-  separate 2-component projection computed only so the scatter plot has
-  something to plot on. K-means gives hard cluster assignments; GMM gives
-  a full probability distribution over clusters per track, which the
-  dashboard surfaces as a confidence bar per track. Cluster membership
-  comes from these models alone — see "Cluster interpretations" below for
-  how that affects reading the plot.
-- **Choosing k:** rather than eyeballing a cluster count, `cluster.py` (and
-  the API server) sweep k=2..8, score each with silhouette score, and pick
-  the best one automatically — while still letting you override it (via
-  `--k` on the CLI, or the slider on the dashboard).
+- **Embeddings, not audio features.** Per track: a lyrics snippet (Genius,
+  via `lyricsgenius`, graceful fallback to `None` if unavailable), genre
+  tags + artist popularity/followers (Spotify `/artists/{id}`, still
+  active), concatenated into one text blob and embedded with
+  `gemini-embedding-001`. Tracks with no lyrics still get embedded from
+  genre + artist info alone — nothing is dropped.
+- **KMeans + GMM, dynamic k.** `cluster.py` sweeps k=2..10, scoring KMeans
+  by silhouette and GMM by BIC + silhouette, then auto-selects a single
+  (model, k) pair — tie-breaking toward GMM when its own BIC- and
+  silhouette-optimal k agree, since soft cluster-membership probabilities
+  are more informative downstream.
+- **Real tool-calling agent.** `agent_describe_clusters.py` hands each
+  cluster's track list to Gemini with `fetch_genre_tags`, `fetch_artist_info`,
+  and `search_web` (`src/tools.py`) available as real callable tools
+  (automatic function calling — schemas are derived from each function's
+  type hints/docstring, not a single unstructured prompt). A second,
+  tool-free call then asks for a structured `{name, description}` JSON
+  response.
+- **LLM-as-judge.** `judge_eval.py` scores each generated description 1-5
+  on groundedness, specificity, and accuracy against the cluster's actual
+  tracks/genres, averages the three, and derives a confidence tier
+  (`>=4.0` high, `3.0-3.9` moderate, `<3.0` low).
+- **Semantic naming lives entirely in the agent.** Unlike hand-crafted
+  audio features, embedding dimensions aren't individually interpretable,
+  so `cluster.py` does no centroid-based auto-naming — that's the agent's
+  job alone.
 
 ## Setup
 
-1. Register an app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard),
-   set the redirect URI to `http://127.0.0.1:8888/callback` (Spotify no longer
-   allows `localhost` as of its Apr 2025 redirect URI policy — must be an
-   explicit loopback IP).
-2. Fill in `.env` with `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`.
-3. `pip install -r requirements.txt`
-4. Download a Spotify audio-features dataset from Kaggle and save it as
-   `data/kaggle_audio_features.csv` (needs columns for track name, artist,
-   and the standard audio features: acousticness, danceability, energy,
-   instrumentalness, liveness, loudness, speechiness, tempo, valence, key, mode).
+1. Register a Spotify app at
+   [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard),
+   redirect URI `http://127.0.0.1:8888/callback` (Spotify requires an
+   explicit loopback IP, not `localhost`, since its Apr 2025 policy change).
+2. Get a free Gemini API key (no billing required) at
+   [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+3. Get a free Genius API token at
+   [genius.com/api-clients](https://genius.com/api-clients).
+4. Fill in `.env`: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`,
+   `GEMINI_API_KEY`, `GENIUS_ACCESS_TOKEN`.
+5. `pip install -r requirements.txt`
 
 ## Run order
 
 ```bash
 cd src
-python fetch_top_tracks.py      # -> data/my_top_tracks.csv
-python match_features.py        # -> data/merged_features.csv
-python cluster.py               # sweeps k=2..8, picks best k, -> data/clustered_tracks.csv
-python visualize.py             # -> output/cluster_scatter.html, output/cluster_features.html
+python fetch_top_tracks.py          # -> data/my_top_tracks.csv (incl. preview_url)
+python build_embeddings.py          # -> data/track_context.csv, data/embeddings.npy
+python cluster.py                   # -> data/clustering_results.csv, data/clustering_meta.json
+python agent_describe_clusters.py   # -> output/cluster_descriptions.json
+python judge_eval.py                # -> output/judge_scores.json
+python visualize.py                 # -> output/output.json, frontend/public/output.json
 ```
 
-Each script can be run independently once its inputs exist, which is
-useful for debugging a single step. `cluster.py` also accepts `--k N` to
-skip the sweep and force a specific cluster count.
+Each script can be rerun independently once its inputs exist. The pipeline
+is fully rerunnable end-to-end: `visualize.py` writes `output.json` to both
+`output/` (the canonical deliverable) and `frontend/public/` directly, so
+refreshing the frontend after a rerun needs no manual copy step.
+
+`fetch_top_tracks.py` prints its `preview_url` coverage — Spotify's preview
+availability varies (often 20-40% null); if it's unusually low, the record
+player will feel sparse, since tracks without a preview are visible in the
+list but unplayable.
 
 ## Frontend
 
-A React dashboard (built in Replit, wired up here) at [frontend/](frontend/)
-visualizes the clusters — sonic profile radar charts, a feature scatter
-map, a silhouette-score k-slider, and a searchable track browser with
-K-means vs GMM shown side by side. It fetches live from a small FastAPI
-backend (`src/api_server.py`) that runs the clustering on demand, so both
-the backend and frontend dev servers need to be running.
+A dark, ambient record-player UI (Vite + React + Tailwind v4) at
+[frontend/](frontend/) — no backend, no Spotify auth, no live API calls.
+It reads `frontend/public/output.json` once on load and renders entirely
+from that: a spinning vinyl (color and center-label art drawn from the
+current track, decelerating to a stop on pause), transport controls,
+cluster-filter pills, and a track list. Null-preview tracks are visible but
+inert; if every track lacks a preview, the player shows an explanatory
+empty state instead of pretending to work.
 
 ### Run the app
 
 ```bash
-# terminal 1 — backend
-cd src
-uvicorn api_server:app --reload --port 8000   # -> http://localhost:8000, docs at /docs
-
-# terminal 2 — frontend
 nvm use             # Tailwind v4's oxide engine requires Node >= 20; picks up the version in .nvmrc
 npm install          # fails fast with a clear error if Node < 20 (enforced via .npmrc engine-strict)
 npm run dev          # -> http://localhost:5173
 npm run build        # -> dist/
 ```
 
-If you don't have Node 20+ installed via `nvm`, run `nvm install` first to fetch the version
-pinned in `.nvmrc`.
-
-## Match rate
-
-Out of 214 unique top tracks pulled from Spotify:
-- Kaggle fuzzy match: 42/214 (19.6%) — the Kaggle dataset is from 2022, so it
-  missed most recent releases.
-- ReccoBeats fallback recovered another 123/172 unmatched tracks.
-- **Final coverage: 165/214 (77.1%)**, 49 tracks dropped for having no
-  features from either source.
-
-## Cluster interpretations
-
-Clustering happens in the full 11-dimension scaled feature space; PCA is
-used only for the 2D scatter plot (it explains ~36% of variance in 2
-components on this dataset, so treat cluster membership — not plot
-distance — as ground truth).
-
-Cluster names and descriptions are no longer hand-written, since both `k`
-and the algorithm (K-means vs GMM) now vary at runtime. Instead,
-`src/clustering.py`'s `describe_cluster()` auto-generates them from each
-cluster's centroid: because the feature matrix is standardized (mean 0,
-std 1), a centroid's value on a given feature *is* that cluster's z-score
-on that feature relative to the full library. The two features with the
-largest `|z|` become the cluster's name (e.g. "Mellow · Acoustic"), and a
-one-sentence description cites the actual z-scores (e.g. "Standout
-acousticness (z=+1.8) and below-average energy (z=-1.2) relative to the
-full library"). This generalizes to any k and to GMM's cluster means
-(`gmm.means_`), so there's nothing left to keep in manual sync — run
-`python src/cluster.py` or start the API server to see the current run's
-actual clusters.
+`frontend/public/output.json` ships with a small placeholder fixture (fake
+tracks, real playable sample audio) so `npm run dev` renders something
+immediately — running the real pipeline overwrites it with your actual
+clusters.

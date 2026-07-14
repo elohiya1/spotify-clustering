@@ -33,11 +33,16 @@ def fetch_top_tracks(sp):
                 track_id = track["id"]
                 if track_id in tracks_by_id:
                     continue
+                images = track["album"].get("images") or []
                 tracks_by_id[track_id] = {
                     "track_id": track_id,
+                    "track_uri": track["uri"],
                     "track_name": track["name"],
                     "artist_name": ", ".join(a["name"] for a in track["artists"]),
-                    "album": track["album"]["name"],
+                    "artist_ids": ", ".join(a["id"] for a in track["artists"]),
+                    "album_name": track["album"]["name"],
+                    "album_art_url": images[0]["url"] if images else None,
+                    "preview_url": track.get("preview_url"),
                     "popularity": track.get("popularity"),
                 }
 
@@ -55,7 +60,10 @@ def main():
     df = pd.DataFrame(tracks)
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
     df.to_csv(OUTPUT_PATH, index=False)
+
+    with_preview = df["preview_url"].notna().sum()
     print(f"Wrote {len(df)} unique tracks to {OUTPUT_PATH}")
+    print(f"Tracks with a preview_url: {with_preview}/{len(df)} ({with_preview / len(df) * 100:.1f}%)")
 
 
 if __name__ == "__main__":

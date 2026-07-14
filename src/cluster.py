@@ -1,97 +1,141 @@
-"""StandardScaler -> PCA -> KMeans/GMM on merged audio features.
+"""StandardScaler -> KMeans + GMM sweep (k=2..10) on Gemini embeddings.
 
-Clusters in full scaled feature space, projects to PCA components for
-visualization only. Writes data/clustered_tracks.csv.
+KMeans is scored with silhouette score. GMM is scored with BIC (lower is
+better) and silhouette (for comparability). A single (model, k) pair is
+auto-selected from the sweep, tie-breaking toward GMM when its own BIC- and
+silhouette-optimal k agree, since soft assignment probabilities are more
+informative downstream. Both models are then fit at that one chosen k so
+data/clustering_results.csv carries kmeans_cluster, gmm_cluster, and
+gmm_probabilities side by side.
 
-If --k is omitted, sweeps k=2..8, prints silhouette scores, and picks the
-best k automatically.
+Semantic cluster naming is NOT done here — embedding dimensions aren't
+individually interpretable the way hand-crafted audio features were, so
+naming is entirely the orchestrating agent's job (agent_describe_clusters.py).
 """
-import argparse
+import json
 import os
+import sys
 
 import numpy as np
+import pandas as pd
+from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
-
-import clustering
+from sklearn.mixture import GaussianMixture
+from sklearn.preprocessing import StandardScaler
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
-OUTPUT_PATH = os.path.join(DATA_DIR, "clustered_tracks.csv")
+EMBEDDINGS_PATH = os.path.join(DATA_DIR, "embeddings.npy")
+CONTEXT_PATH = os.path.join(DATA_DIR, "track_context.csv")
+RESULTS_PATH = os.path.join(DATA_DIR, "clustering_results.csv")
+META_PATH = os.path.join(DATA_DIR, "clustering_meta.json")
+
+K_MIN, K_MAX = 2, 10
+RANDOM_STATE = 42
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--k", type=int, default=None,
-                         help="number of clusters (omit to sweep k=2..8 and auto-pick the best)")
-    parser.add_argument("--pca-components", type=int, default=2)
-    parser.add_argument("--top-n", type=int, default=5, help="tracks to show per cluster centroid")
-    return parser.parse_args()
+def load_embeddings():
+    if not os.path.exists(EMBEDDINGS_PATH) or not os.path.exists(CONTEXT_PATH):
+        sys.exit(f"Missing {EMBEDDINGS_PATH} or {CONTEXT_PATH}. Run build_embeddings.py first.")
+    embeddings = np.load(EMBEDDINGS_PATH)
+    context_df = pd.read_csv(CONTEXT_PATH)
+    if len(embeddings) != len(context_df):
+        sys.exit("embeddings.npy and track_context.csv are misaligned — rerun build_embeddings.py.")
+    return embeddings, context_df
 
 
-def print_cluster_summary(label, df, X_scaled, labels, centroids, k, top_n):
-    print(f"\n{label} cluster summary (k={k}):\n")
-    for cluster_id in range(k):
-        mask = labels == cluster_id
-        cluster_df = df[mask]
-        name, description = clustering.describe_cluster(centroids[cluster_id])
+def sweep(X_scaled):
+    """Return per-k stats for both algorithms across K_MIN..K_MAX."""
+    results = []
+    for k in range(K_MIN, K_MAX + 1):
+        kmeans = KMeans(n_clusters=k, n_init=10, random_state=RANDOM_STATE)
+        kmeans_labels = kmeans.fit_predict(X_scaled)
+        kmeans_sil = silhouette_score(X_scaled, kmeans_labels)
 
-        dists = np.linalg.norm(X_scaled[mask] - centroids[cluster_id], axis=1)
-        closest_idx = np.argsort(dists)[:top_n]
-        closest_tracks = cluster_df.iloc[closest_idx]
+        gmm = GaussianMixture(n_components=k, random_state=RANDOM_STATE)
+        gmm.fit(X_scaled)
+        gmm_labels = gmm.predict(X_scaled)
+        gmm_sil = silhouette_score(X_scaled, gmm_labels)
+        gmm_bic = gmm.bic(X_scaled)
 
-        print(f"--- Cluster {cluster_id}: {name} ({mask.sum()} tracks) ---")
-        print(description)
-        print("Closest tracks to centroid:")
-        for _, row in closest_tracks.iterrows():
-            print(f"  {row['track_name']} — {row['artist_name']}")
-        print("Mean features:")
-        print(cluster_df[clustering.FEATURE_COLS].mean().round(3).to_string())
-        print()
+        results.append({
+            "k": k,
+            "kmeans_silhouette": float(kmeans_sil),
+            "gmm_silhouette": float(gmm_sil),
+            "gmm_bic": float(gmm_bic),
+        })
+    return results
+
+
+def choose_model_and_k(sweep_results):
+    kmeans_best = max(sweep_results, key=lambda r: r["kmeans_silhouette"])
+    gmm_bic_best = min(sweep_results, key=lambda r: r["gmm_bic"])
+    gmm_sil_best = max(sweep_results, key=lambda r: r["gmm_silhouette"])
+
+    bic_and_silhouette_agree = gmm_bic_best["k"] == gmm_sil_best["k"]
+    gmm_candidate_sil = gmm_bic_best["gmm_silhouette"]
+
+    if bic_and_silhouette_agree and gmm_candidate_sil >= kmeans_best["kmeans_silhouette"]:
+        return "gmm", gmm_bic_best["k"]
+
+    if gmm_candidate_sil >= kmeans_best["kmeans_silhouette"]:
+        return "gmm", gmm_bic_best["k"]
+
+    return "kmeans", kmeans_best["k"]
 
 
 def main():
-    args = parse_args()
+    embeddings, context_df = load_embeddings()
+    track_ids = context_df["track_id"].tolist()
 
-    df = clustering.load_merged_features()
-    X_scaled, _ = clustering.prepare_feature_matrix(df)
+    if len(track_ids) < K_MAX:
+        sys.exit(f"Only {len(track_ids)} tracks — not enough to sweep k up to {K_MAX}.")
 
-    if args.k is not None and len(df) < args.k:
-        raise SystemExit(f"Only {len(df)} tracks with complete features — not enough for k={args.k}.")
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(embeddings)
 
-    if args.k is None:
-        sweep = clustering.silhouette_sweep(X_scaled)
-        best_k = max(sweep, key=lambda point: point["silhouette_score"])["k"]
-        print("Silhouette sweep (k=2..8):")
-        for point in sweep:
-            marker = " *" if point["k"] == best_k else ""
-            print(f"  k={point['k']}: {point['silhouette_score']:.4f}{marker}")
-        print(f"Best k by silhouette score: {best_k}\n")
-        k = best_k
-    else:
-        k = args.k
+    print(f"Sweeping k={K_MIN}..{K_MAX} (KMeans: silhouette, GMM: BIC + silhouette)...")
+    sweep_results = sweep(X_scaled)
+    for r in sweep_results:
+        print(
+            f"  k={r['k']}: kmeans_silhouette={r['kmeans_silhouette']:.4f}  "
+            f"gmm_silhouette={r['gmm_silhouette']:.4f}  gmm_bic={r['gmm_bic']:.1f}"
+        )
 
-    X_pca, pca = clustering.compute_pca(X_scaled, args.pca_components)
-    print(f"PCA explained variance ratio: {np.round(pca.explained_variance_ratio_, 3)} "
-          f"(total: {pca.explained_variance_ratio_.sum():.3f})")
+    chosen_model, chosen_k = choose_model_and_k(sweep_results)
+    chosen_row = next(r for r in sweep_results if r["k"] == chosen_k)
+    chosen_silhouette = chosen_row["kmeans_silhouette"] if chosen_model == "kmeans" else chosen_row["gmm_silhouette"]
 
-    kmeans_labels, kmeans_model = clustering.fit_kmeans(X_scaled, k)
-    gmm_labels, gmm_probabilities, gmm_model = clustering.fit_gmm(X_scaled, k)
+    print(f"\nChosen: {chosen_model} @ k={chosen_k}  "
+          f"(silhouette={chosen_silhouette:.4f}"
+          + (f", bic={chosen_row['gmm_bic']:.1f}" if chosen_model == "gmm" else "") + ")")
 
-    print(f"\nKMeans silhouette score: {silhouette_score(X_scaled, kmeans_labels):.4f}")
-    print(f"GMM silhouette score: {silhouette_score(X_scaled, gmm_labels):.4f}")
+    kmeans = KMeans(n_clusters=chosen_k, n_init=10, random_state=RANDOM_STATE)
+    kmeans_labels = kmeans.fit_predict(X_scaled)
 
-    df["cluster"] = kmeans_labels
-    df["gmm_cluster"] = gmm_labels
-    for i in range(args.pca_components):
-        df[f"pca_{i+1}"] = X_pca[:, i]
-    for i in range(k):
-        df[f"gmm_prob_{i}"] = gmm_probabilities[:, i]
+    gmm = GaussianMixture(n_components=chosen_k, random_state=RANDOM_STATE)
+    gmm.fit(X_scaled)
+    gmm_probabilities = gmm.predict_proba(X_scaled)
+    gmm_labels = gmm_probabilities.argmax(axis=1)
 
-    print_cluster_summary("KMeans", df, X_scaled, kmeans_labels, kmeans_model.cluster_centers_, k, args.top_n)
-    print_cluster_summary("GMM", df, X_scaled, gmm_labels, gmm_model.means_, k, args.top_n)
-
+    results_df = pd.DataFrame({
+        "track_id": track_ids,
+        "kmeans_cluster": kmeans_labels,
+        "gmm_cluster": gmm_labels,
+        "gmm_probabilities": [json.dumps([round(float(p), 4) for p in row]) for row in gmm_probabilities],
+    })
     os.makedirs(DATA_DIR, exist_ok=True)
-    df.to_csv(OUTPUT_PATH, index=False)
-    print(f"Wrote {len(df)} labeled tracks to {OUTPUT_PATH}")
+    results_df.to_csv(RESULTS_PATH, index=False)
+    print(f"Wrote {len(results_df)} rows to {RESULTS_PATH}")
+
+    with open(META_PATH, "w") as f:
+        json.dump({
+            "chosen_model": chosen_model,
+            "chosen_k": int(chosen_k),
+            "silhouette_score": float(chosen_silhouette),
+            "gmm_bic": float(chosen_row["gmm_bic"]),
+            "sweep": sweep_results,
+        }, f, indent=2)
+    print(f"Wrote clustering metadata to {META_PATH}")
 
 
 if __name__ == "__main__":

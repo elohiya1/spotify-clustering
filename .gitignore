@@ -4,11 +4,13 @@ __pycache__/
 *.pyc
 .venv/
 venv/
-data/kaggle_audio_features.csv
 data/my_top_tracks.csv
-data/merged_features.csv
-data/clustered_tracks.csv
+data/track_context.csv
+data/embeddings.npy
+data/clustering_results.csv
+data/clustering_meta.json
 output/
+frontend/public/output.json
 .cache
 node_modules/
 dist/
